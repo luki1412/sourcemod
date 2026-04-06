@@ -178,7 +178,19 @@ public:
 	}
 
 	static SystemFile *Open(const char *path, const char *mode) {
+#if defined(_WIN32)
+		static thread_local bool invalid_fopen = false;
+		static auto handler = [](const wchar_t*, const wchar_t*, const wchar_t*, unsigned int, uintptr_t) { invalid_fopen = true; };
+		auto old = _set_thread_local_invalid_parameter_handler(handler);
+		invalid_fopen = false;
+#endif
 		FILE *fp = fopen(path, mode);
+#if defined(_WIN32)
+		_set_thread_local_invalid_parameter_handler(old);
+		if (invalid_fopen)
+			return NULL;
+#endif
+
 		if (!fp)
 			return NULL;
 		return new SystemFile(fp);
@@ -498,6 +510,14 @@ static cell_t sm_OpenFile(IPluginContext *pContext, const cell_t *params)
 	char *name, *mode;
 	pContext->LocalToString(params[1], &name);
 	pContext->LocalToString(params[2], &mode);
+
+	if (mode == nullptr || mode[0] == '\0') {
+		return pContext->ThrowNativeError("File open mode cannot be empty!");
+	}
+	
+	if (mode[0] != 'r' && mode[0] != 'w' && mode[0] != 'a') {
+		return pContext->ThrowNativeError("File open mode is invalid \"%s\"!", mode);
+	}
 
 	FileObject *file = NULL;
 	if (params[0] <= 2 || !params[3]) {

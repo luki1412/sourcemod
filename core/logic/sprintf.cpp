@@ -269,7 +269,8 @@ void AddFloat(char **buf_p, size_t &maxlen, double fval, int width, int prec, in
 
 	if (ke::IsInfinite(static_cast<float>(fval)))
 	{
-		AddString(buf_p, maxlen, "Inf", width, prec, flags | NOESCAPE);
+		const char *str = ((fval < 0) ? "-Inf" : "Inf");
+		AddString(buf_p, maxlen, str, width, prec, flags | NOESCAPE);
 		return;
 	}
 
@@ -383,9 +384,9 @@ void AddFloat(char **buf_p, size_t &maxlen, double fval, int width, int prec, in
 	*buf_p = buf;
 }
 
-void AddBinary(char **buf_p, size_t &maxlen, unsigned int val, int width, int flags)
+void AddBinary(char **buf_p, size_t &maxlen, uint64_t val, int width, int flags)
 {
-	char text[32];
+	char text[64];
 	int digits;
 	char *buf;
 
@@ -434,7 +435,7 @@ void AddBinary(char **buf_p, size_t &maxlen, unsigned int val, int width, int fl
 	*buf_p = buf;
 }
 
-void AddUInt(char **buf_p, size_t &maxlen, unsigned int val, int width, int flags)
+void AddUInt(char **buf_p, size_t &maxlen, uint64_t val, int width, int flags)
 {
 	char text[32];
 	int digits;
@@ -478,24 +479,24 @@ void AddUInt(char **buf_p, size_t &maxlen, unsigned int val, int width, int flag
 	*buf_p = buf;
 }
 
-void AddInt(char **buf_p, size_t &maxlen, int val, int width, int flags)
+void AddInt(char **buf_p, size_t &maxlen, int64_t val, int width, int flags)
 {
 	char text[32];
 	int digits;
-	int signedVal;
+	int64_t signedVal;
 	char *buf;
-	unsigned int unsignedVal;
+	uint64_t unsignedVal;
 
 	digits = 0;
 	signedVal = val;
 	if (val < 0)
 	{
-		/* we want the unsigned version */
-		unsignedVal = abs(val);
+		unsignedVal = 0 - static_cast<uint64_t>(val);
+		width--; // Reserved for '-' sign
 	}
 	else
 	{
-		unsignedVal = val;
+		unsignedVal = static_cast<uint64_t>(val);
 	}
 
 	do
@@ -549,7 +550,7 @@ void AddInt(char **buf_p, size_t &maxlen, int val, int width, int flags)
 	*buf_p = buf;
 }
 
-void AddHex(char **buf_p, size_t &maxlen, unsigned int val, int width, int flags)
+void AddHex(char **buf_p, size_t &maxlen, uint64_t val, int width, int flags)
 {
 	char text[32];
 	int digits;
@@ -1154,7 +1155,7 @@ reswitch:
 				CHECK_ARGS(0);
 				cell_t *value;
 				pCtx->LocalToPhysAddr(params[arg], &value);
-				AddBinary(&buf_p, llen, *value, width, flags);
+				AddBinary(&buf_p, llen, static_cast<unsigned int>(*value), width, flags);
 				arg++;
 				break;
 			}
@@ -1305,6 +1306,61 @@ reswitch:
 				pCtx->LocalToPhysAddr(params[arg], &value);
 				AddHex(&buf_p, llen, static_cast<unsigned int>(*value), width, flags);
 				arg++;
+				break;
+			}
+		case 'l':
+			{
+				CHECK_ARGS(0);
+				ch = *fmt++;
+
+				switch (ch)
+				{
+				case 'b':
+					{
+						cell_t *value;
+						pCtx->LocalToPhysAddr(params[arg], &value);
+						AddBinary(&buf_p, llen, *reinterpret_cast<uint64_t*>(value), width, flags);
+						++arg;
+						break;
+					}
+				case 'd':
+				case 'i':
+					{
+						cell_t *value;
+						pCtx->LocalToPhysAddr(params[arg], &value);
+						AddInt(&buf_p, llen, *reinterpret_cast<int64_t*>(value), width, flags);
+						++arg;
+						break;
+					}
+				case 'u':
+					{
+						cell_t *value;
+						pCtx->LocalToPhysAddr(params[arg], &value);
+						AddUInt(&buf_p, llen, *reinterpret_cast<uint64_t*>(value), width, flags);
+						++arg;
+						break;
+					}
+				case 'X':
+					{
+						cell_t *value;
+						pCtx->LocalToPhysAddr(params[arg], &value);
+						AddHex(&buf_p, llen, *reinterpret_cast<uint64_t*>(value), width, flags | UPPERDIGITS);
+						++arg;
+						break;
+					}
+				case 'x':
+					{
+						cell_t *value;
+						pCtx->LocalToPhysAddr(params[arg], &value);
+						AddHex(&buf_p, llen, *reinterpret_cast<uint64_t*>(value), width, flags);
+						++arg;
+						break;
+					}
+				default:
+					{
+						return pCtx->ThrowNativeError("%s", "Invalid formatter. Only %lb, %ld, %li, %lu, %lX, %lx are allowed.");
+					}
+				}
 				break;
 			}
 		case '%':
